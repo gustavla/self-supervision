@@ -5,7 +5,6 @@ import deepdish as dd
 import itertools as itr
 import numpy as np
 import datetime
-import os
 import glob
 import re
 import ipdb
@@ -127,7 +126,8 @@ def build_network(raw_x, y, model_filename=None):
     return activations, info
 
 
-def train(model_filename, output_dir, device='/gpu:0', time_limit=None):
+def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
+          iterations=80000):
     if os.path.exists(os.path.join(output_dir, '0-done')):
         return
 
@@ -174,16 +174,13 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None):
         gl.printing.print_init(info)
 
         lr0 = 0.001
-        #epoch = len(imgs) / BATCH_SIZE
-        #steps = list((np.array([250, 300, 350, 400]) * epoch).astype(np.int32))
         variables['global_stage'] = tf.Variable(0, trainable=False, dtype=tf.int32, name="global_stage")
         variables['global_stage_start'] = tf.Variable(0, trainable=False, dtype=tf.int32, name="global_stage_start")
         if False:  # Adaptive
             lr = lr0 * 10 ** tf.cast(-variables['global_stage'], tf.float32)
             max_iter = None
         else:
-            steps = [10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000]
-            #steps = [1000]
+            steps = [int(x) for x in np.arange(1, 9) * (iterations / 8)]
             print('steps', steps)
             max_iter = steps[-1]
             lrs = list(lr0 * 2**-np.arange(len(steps) + 1, dtype=np.float32))
@@ -327,7 +324,8 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None):
             if (iteration % SNAPSHOT_EVERY == 0 and iteration > start_iter or
                 iteration == max_iter or time_up):
                 # Save checkpoint
-                snap_fn = gl.snapshot.save(saver, sess, variables, None)
+                snap_fn = gl.snapshot.new_save(saver, sess, iteration,
+                        path=os.path.join(output_dir, 'snapshots'))
                 print('Saved snapshot to', snap_fn)
 
             # Train step
@@ -353,7 +351,8 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None):
     del sess
 
 
-def test(model_filename, output_dir, device='/gpu:0', time_limit=None):
+def test(model_filename, output_dir, device='/gpu:0', time_limit=None,
+         iterations=80000):
     if not os.path.exists(os.path.join(output_dir, '0-done')) or os.path.exists(os.path.join(output_dir, '1-tested')):
         return
 
@@ -454,9 +453,16 @@ def test(model_filename, output_dir, device='/gpu:0', time_limit=None):
                 print('done', file=f)
             with open(os.path.join(output_dir, 'results.txt'), 'w') as f:
                 print('Model file:', os.path.abspath(model_filename), file=f)
+                print('Args:', sys.argv)
                 print('mAP: {mean_ap:.2%}'.format(mean_ap=mean_ap), file=f)
 
     del sess
+
+
+def train_and_test(*args, **kwargs):
+    train(*args, **kwargs)
+    tf.reset_default_graph()
+    test(*args, **kwargs)
 
 
 if __name__ == '__main__':
