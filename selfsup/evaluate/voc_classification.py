@@ -56,7 +56,7 @@ def special_loss(logits, labels):
     return tf.reduce_sum(lz + (tf.to_float(logits > 0) - labels1) * logits * mask, 1) 
 
 
-def build_network(raw_x, y, model_filename=None):
+def build_network(raw_x, y, model_filename=None, network_type='alex-lrn'):
     outputs = []
     activations = {}
 
@@ -73,12 +73,25 @@ def build_network(raw_x, y, model_filename=None):
     else:
         data = {}
 
-    z = gl.alex.build_network(x, info=info, parameters=data,
-                             final_layer=False,
-                             phase_test=phase_test,
-                             pre_adjust_batch_norm=True,
-                             use_dropout=True,
-                             well_behaved_size=False)
+    if network_type in ['alex', 'alex-lrn']:
+        use_lrn = network_type == 'alex-lrn'
+        print('USE_LRN', use_lrn)
+        z = gl.alex.build_network(x, info=info, parameters=data,
+                                 final_layer=False,
+                                 phase_test=phase_test,
+                                 pre_adjust_batch_norm=True,
+                                 use_lrn=use_lrn,
+                                 use_dropout=True,
+                                 well_behaved_size=False)
+    elif network_type == 'vgg16':
+        z = gl.vgg.build_network(x, info=info, parameters=data,
+                                 final_layer=False,
+                                 phase_test=phase_test,
+                                 pre_adjust_batch_norm=True,
+                                 use_dropout=True,
+                                 well_behaved_size=False)
+    else:
+        raise ValueError('Unsupported network type')
 
     #z = info['activations']['conv5']
     z = gl.vgg.vgg_inner(z, CLASSES, info=info, activation=None, name='task')
@@ -127,7 +140,7 @@ def build_network(raw_x, y, model_filename=None):
 
 
 def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
-          iterations=80000):
+          iterations=80000, network_type='alex-lrn'):
     if os.path.exists(os.path.join(output_dir, '0-done')):
         return
 
@@ -169,7 +182,8 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
         """
 
     with tf.device(device):
-        variables, info = build_network(x, y, model_filename=model_filename)
+        variables, info = build_network(x, y, model_filename=model_filename,
+                                        network_type=network_type)
 
         gl.printing.print_init(info)
 
@@ -352,7 +366,7 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
 
 
 def test(model_filename, output_dir, device='/gpu:0', time_limit=None,
-         iterations=80000):
+         iterations=80000, network_type='alex-lrn'):
     if not os.path.exists(os.path.join(output_dir, '0-done')) or os.path.exists(os.path.join(output_dir, '1-tested')):
         return
 
@@ -373,7 +387,7 @@ def test(model_filename, output_dir, device='/gpu:0', time_limit=None,
                                                               )
 
     with tf.device(device):
-        variables, info = build_network(x, y)
+        variables, info = build_network(x, y, network_type=network_type)
 
     # TODO: Enforce time limit here
     with tf.Session(config=gl.config()) as sess:

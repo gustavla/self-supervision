@@ -5,6 +5,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('task', type=str)
     parser.add_argument('model', type=str)
+    parser.add_argument('-n', '--network', default='alex-lrn', type=str)
     parser.add_argument('-d', '--device', default='/gpu:0', type=str)
     #parser.add_argument('-n', '--number', default=1, type=int)
     parser.add_argument('-o', '--output', default='output', type=str)
@@ -18,7 +19,7 @@ def main():
     if task == 'voc2007-classification':
         from .voc_classification import train_and_test
         train_and_test(model_filename=model_fn, output_dir=args.output, device=args.device,
-                    time_limit=args.limit, iterations=args.iterations)
+                    time_limit=args.limit, iterations=args.iterations, network_type=args.network)
 
 if __name__ == '__main__':
     main()
