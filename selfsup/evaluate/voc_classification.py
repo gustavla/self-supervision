@@ -26,8 +26,6 @@ MIN_SCALE = 0.5
 MAX_SCALE = 2.0
 
 CROPS = 10
-CROP_SIZE = 227
-OUTER_CROP_SIZE = None
 
 IMAGENET_TRAIN = os.path.expandvars('$LARSSON/ImageNet/imagenet_train.txt')
 IMAGENET_A_TRAIN = os.path.expandvars('$LARSSON/ImageNet/100k_100k/imagenet_tr.txt')
@@ -88,8 +86,7 @@ def build_network(raw_x, y, model_filename=None, network_type='alex-lrn'):
                                  final_layer=False,
                                  phase_test=phase_test,
                                  pre_adjust_batch_norm=True,
-                                 use_dropout=True,
-                                 well_behaved_size=False)
+                                 use_dropout=True)
     else:
         raise ValueError('Unsupported network type')
 
@@ -139,6 +136,13 @@ def build_network(raw_x, y, model_filename=None, network_type='alex-lrn'):
     return activations, info
 
 
+def crop_size(network_type):
+    if network_type.startswith('alex'):
+        return 227
+    else:
+        return 224
+
+
 def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
           iterations=80000, network_type='alex-lrn'):
     if os.path.exists(os.path.join(output_dir, '0-done')):
@@ -154,8 +158,7 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
     with tf.device('/cpu'):
         x, y, sh, imgname, scale = gl.datasets.voc2007_classification_batching('trainval',
                                                               batch_size=BATCH_SIZE,
-                                                              input_size=CROP_SIZE,
-                                                              #outer_input_size=OUTER_CROP_SIZE,
+                                                              input_size=crop_size(network_type),
                                                               min_scale=MIN_SCALE,
                                                               max_scale=MAX_SCALE,
                                                               #seed=SEED,
@@ -377,7 +380,7 @@ def test(model_filename, output_dir, device='/gpu:0', time_limit=None,
     with tf.device('/cpu'):
         x, y, sh, name, scale = gl.datasets.voc2007_classification_batching('test',
                                                               batch_size=TEST_BATCH_SIZE,
-                                                              input_size=CROP_SIZE,
+                                                              input_size=crop_size(network_type),
                                                               min_scale=MIN_SCALE,
                                                               max_scale=MAX_SCALE,
                                                               num_threads=10,
