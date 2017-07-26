@@ -3,8 +3,6 @@ Self-supervision
 
 Training and evaluating self-supervised deep neural networks.
 
-Models will be uploaded after the poster session at CVPR 2017 and code will follow in the days to come.
-
 * http://people.cs.uchicago.edu/~larsson/color-proxy
 
 Models
