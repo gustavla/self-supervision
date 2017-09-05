@@ -9,12 +9,14 @@ import glob
 import re
 import ipdb
 import datetime
-from gl.util import DummyDict
+from selfsup.util import DummyDict
 import gl
 import time
 import functools
 from sklearn import metrics
 import selfsup
+import selfsup.info
+import selfsup.model.alex
 
 BATCH_SIZE = 16  # TODO: NOTE!
 TEST_BATCH_SIZE = 10
@@ -60,9 +62,8 @@ def build_network(raw_x, y, model_filename=None, network_type='alex-lrn'):
 
     phase_test = tf.placeholder(tf.bool, name='phase_test')
 
-    info = gl.info.create(scale_summary=True)
+    info = selfsup.info.create(scale_summary=True)
 
-    #x = tf.reduce_mean(raw_x, 3, keep_dims=True) - 114.451/255
     x = raw_x - 114.451/255
 
     # Scale and subtract mean
@@ -74,7 +75,7 @@ def build_network(raw_x, y, model_filename=None, network_type='alex-lrn'):
     if network_type in ['alex', 'alex-lrn']:
         use_lrn = network_type == 'alex-lrn'
         print('USE_LRN', use_lrn)
-        z = gl.alex.build_network(x, info=info, parameters=data,
+        z = selfsup.model.alex.build_network(x, info=info, parameters=data,
                                  final_layer=False,
                                  phase_test=phase_test,
                                  pre_adjust_batch_norm=True,
@@ -82,7 +83,7 @@ def build_network(raw_x, y, model_filename=None, network_type='alex-lrn'):
                                  use_dropout=True,
                                  well_behaved_size=False)
     elif network_type == 'vgg16':
-        z = gl.vgg.build_network(x, info=info, parameters=data,
+        z = selfsup.model.vgg16.build_network(x, info=info, parameters=data,
                                  final_layer=False,
                                  phase_test=phase_test,
                                  pre_adjust_batch_norm=True,
@@ -91,7 +92,7 @@ def build_network(raw_x, y, model_filename=None, network_type='alex-lrn'):
         raise ValueError('Unsupported network type')
 
     #z = info['activations']['conv5']
-    z = gl.vgg.vgg_inner(z, CLASSES, info=info, activation=None, name='task')
+    z = selfsup.model.vgg16.vgg_inner(z, CLASSES, info=info, activation=None, name='task')
 
     # Create hypercolumn
     activations = info['activations']
@@ -156,7 +157,7 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
     imgs = []
     segs = []
     with tf.device('/cpu'):
-        x, y, sh, imgname, scale = gl.datasets.voc2007_classification_batching('trainval',
+        x, y, sh, imgname, scale = selfsup.datasets.voc2007_classification_batching('trainval',
                                                               batch_size=BATCH_SIZE,
                                                               input_size=crop_size(network_type),
                                                               min_scale=MIN_SCALE,
@@ -188,7 +189,7 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
         variables, info = build_network(x, y, model_filename=model_filename,
                                         network_type=network_type)
 
-        gl.printing.print_init(info)
+        selfsup.printing.print_init(info)
 
         lr0 = 0.001
         variables['global_stage'] = tf.Variable(0, trainable=False, dtype=tf.int32, name="global_stage")
@@ -240,9 +241,9 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
             if g is not None:
                 grads[v.name] = g
 
-        gl.tprint('Updating variables:')
+        selfsup.tprint('Updating variables:')
         for a, b in grads_and_vars_subset:
-            gl.tprint('-', b.name)
+            selfsup.tprint('-', b.name)
 
         train_step = opt.apply_gradients(grads_and_vars_subset, global_step=variables['global_step'])
 
@@ -250,31 +251,25 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
         variables['window_last_average'] = tf.Variable(0.0, trainable=False, dtype=tf.float32, name='window_last_average')
         variables['window_size'] = tf.Variable(0, trainable=False, dtype=tf.int32, name='window_pointer')
 
-    with tf.Session(config=gl.config()) as sess:
+    with tf.Session(config=selfsup.config()) as sess:
         saver = tf.train.Saver()
 
         merged = tf.summary.merge_all()
         tr_sw = tf.summary.FileWriter(os.path.join('tf-log', 'train_train'), sess.graph)
         vl_sw = tf.summary.FileWriter(os.path.join('tf-log', 'train_val'), sess.graph)
 
-        snapshot_fn = gl.snapshot.find(os.path.join(output_dir, 'snapshots'))
+        snapshot_fn = selfsup.snapshot.find(os.path.join(output_dir, 'snapshots'))
         if snapshot_fn is not None:
-            gl.snapshot.restore(saver, sess, None, snapshot_fn)
+            selfsup.snapshot.restore(saver, sess, None, snapshot_fn)
             start_iter = variables['global_step'].eval()
         else:
             sess.run(tf.global_variables_initializer())
             start_iter = 0
 
         if variables['global_step'].eval() == 0:
-            # Load caffemodel
-            #loaded = gl.jigsaw.load_caffemodel(CAFFE_MODEL, sess, ignore={'fc8'})
-            #gl.tprint('Loaded from', CAFFE_MODEL)
-            #for l in loaded:
-                #gl.tprint('-', l)
-
             # Randomize fc6, fc7, fc8
             if 0:
-                gl.tprint('Randomized')
+                selfsup.tprint('Randomized')
                 assigns = []
                 for l, sh in [('fc6', (4096, 9216)), ('fc7', (4096, 4096)), ('task', (CLASSES, 4096))]:
                     a = info['weights'][l + ':weights']
@@ -282,14 +277,14 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
                     rs = np.random.RandomState(0)
                     cfW = rs.normal(0, 0.01, size=sh).astype(np.float32)
                     print(cfW.ravel()[:5])
-                    tfW = gl.caffe.from_caffe(cfW, name=l, conv_fc_transitionals={'fc6': (4096, 256, 6, 6)})
+                    tfW = selfsup.caffe.from_caffe(cfW, name=l, conv_fc_transitionals={'fc6': (4096, 256, 6, 6)})
                     assigns.append(a.assign(tfW))
 
                     b = info['weights'][l + ':biases']
                     sh = b.get_shape().as_list()
                     assigns.append(b.assign(np.full(sh, 0.1, dtype=np.float32)))
 
-                    gl.tprint('-', l)
+                    selfsup.tprint('-', l)
 
                 sess.run(assigns)
 
@@ -334,14 +329,14 @@ def train(model_filename, output_dir, device='/gpu:0', time_limit=None,
 
                 tr_sw.add_summary(summary, iteration)
 
-                gl.tprint('[{itr_per_s:3.0f} it/s] Train {iteration:8d} Loss {train_loss:7.3f} lr = {lri:7.5g} '.format(
+                selfsup.tprint('[{itr_per_s:3.0f} it/s] Train {iteration:8d} Loss {train_loss:7.3f} lr = {lri:7.5g} '.format(
                     itr_per_s=itr_per_s, iteration=iteration, train_loss=train_loss, lri=lri))
 
             # Snapshot
             if (iteration % SNAPSHOT_EVERY == 0 and iteration > start_iter or
                 iteration == max_iter or time_up):
                 # Save checkpoint
-                snap_fn = gl.snapshot.new_save(saver, sess, iteration,
+                snap_fn = selfsup.snapshot.new_save(saver, sess, iteration,
                         path=os.path.join(output_dir, 'snapshots'))
                 print('Saved snapshot to', snap_fn)
 
@@ -378,7 +373,7 @@ def test(model_filename, output_dir, device='/gpu:0', time_limit=None,
     imgs = []
     segs = []
     with tf.device('/cpu'):
-        x, y, sh, name, scale = gl.datasets.voc2007_classification_batching('test',
+        x, y, sh, name, scale = selfsup.datasets.voc2007_classification_batching('test',
                                                               batch_size=TEST_BATCH_SIZE,
                                                               input_size=crop_size(network_type),
                                                               min_scale=MIN_SCALE,
@@ -393,17 +388,17 @@ def test(model_filename, output_dir, device='/gpu:0', time_limit=None,
         variables, info = build_network(x, y, network_type=network_type)
 
     # TODO: Enforce time limit here
-    with tf.Session(config=gl.config()) as sess:
+    with tf.Session(config=selfsup.config()) as sess:
         with tf.device(device):
             saver = tf.train.Saver()
             merged = tf.summary.merge_all()
 
-            snapshot_fn = gl.snapshot.find(os.path.join(output_dir, 'snapshots'))
+            snapshot_fn = selfsup.snapshot.find(os.path.join(output_dir, 'snapshots'))
             if len(sys.argv) == 2:
                 snapshot_fn = sys.argv[1]
 
             if snapshot_fn is not None:
-                gl.snapshot.restore(saver, sess, None, snapshot_fn)
+                selfsup.snapshot.restore(saver, sess, None, snapshot_fn)
                 start_iter = variables['global_step'].eval()
             else:
                 sess.run(tf.global_variables_initializer())
