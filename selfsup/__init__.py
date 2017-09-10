@@ -27,12 +27,12 @@ def print_git(fatal=False):
     files = subprocess.check_output(["git", "ls-files", "-m"]).decode('utf-8').split('\n')
     files = [f for f in files if f]
     if len(files) > 0:
-        print(f"HAS {len(files)} MODIFIED FILES")
+        print("HAS {len(files)} MODIFIED FILES")
         if fatal:
             sys.exit(1)
     else:
         sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode('utf-8').strip()
-        print(f'sha {sha}')
+        print('sha {sha}')
     os.chdir(curdir)
 
 
